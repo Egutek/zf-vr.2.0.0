@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { addOperatorToShift, createShift, moveOperator, movedOnly, returnToStart, type ShiftState } from './lib/shifts';
 import { exportShift, loadShift, saveShift } from './lib/storage';
 import { filterOperators } from './lib/search';
-import { AREA_ORDER, type Area, type AssignedOperator, type BoardAnalysisResult, type Detection, type ImageQuality } from './types';
+import { AREA_ORDER, type Area, type BoardAnalysisResult, type Detection, type ImageQuality } from './types';
 import { analyzeBoardPhoto } from './ocr/pipeline';
 import { buildBoardDiagnostics, exportDiagnosticsJson } from './ocr/diagnostics';
 import { DebugPanel } from './ocr/debug';
@@ -67,6 +67,12 @@ export default function App() {
       analysis.boardDetected
     )
     : null;
+
+  const boardStatus = analysis ? (analysis.review.hasBlockingIssues ? 'Kontrola nutná' : 'Hotovo') : 'Čeká na snímek';
+  const fleetLoad = shift ? Math.min(100, Math.round((shift.operators.length / Math.max(1, AREAS.length)) * 100)) : 0;
+  const transportCount = analysis?.assignedOperators.filter((operator) => operator.area === 'TRANSPORT').length ?? 0;
+  const reviewQueueSize = analysis?.review.blockingIssues.reduce((sum, issue) => sum + issue.count, 0) ?? 0;
+  const riskLevel = reviewQueueSize === 0 ? 'Bezpečně' : reviewQueueSize <= 2 ? 'Střední' : 'Vysoké';
 
   async function loadPhoto(file: File): Promise<void> {
     setBusy(true);
@@ -151,7 +157,7 @@ export default function App() {
   }
 
   const reviewQueue = shift && (
-    <section aria-labelledby="review-heading">
+    <section aria-labelledby="review-heading" className="panel">
       <div className="section-heading">
         <h2 id="review-heading">Případy ke kontrole</h2>
         <strong>{reviewRows.length}</strong>
@@ -179,7 +185,7 @@ export default function App() {
                 <label>
                   Pracoviště
                   <select value={draft.area} onChange={(event) => updateReviewDraft(index, row, { area: event.target.value as ReviewDraft['area'] })}>
-                      <option value="">Vyberte pracoviště</option>
+                    <option value="">Vyberte pracoviště</option>
                     {AREAS.map((area) => <option key={area} value={area}>{area}</option>)}
                   </select>
                 </label>
@@ -197,28 +203,65 @@ export default function App() {
   );
 
   return (
-    <main>
+    <main className="zf-shell">
       <header className="app-header">
-        <div><b>SHIFT BOARD</b><span>Noční • Transport priorita</span></div>
-        <i aria-live="polite">{progress}</i>
+        <div className="brand">
+          <div className="brand-mark">ZF</div>
+          <div>
+            <span className="eyebrow">Warehouse Ops</span>
+            <h3>Team Lead Board</h3>
+          </div>
+        </div>
+        <div className="status-wrap">
+          <span className="status-pill">{analysis ? 'Live OCR' : 'Ready'}</span>
+          <i aria-live="polite">{progress}</i>
+        </div>
       </header>
 
       {!shift ? (
         <>
-          <section className="hero">
-            <h1>Vyfoť tabuli. Ověř OCR. Spusť směnu.</h1>
-            <label className="upload">
-              Načíst fotografii
-              <input type="file" accept="image/*" capture="environment" disabled={busy} onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void loadPhoto(file);
-              }} />
-            </label>
-            <p>Fotografie zůstává v tomto prohlížeči. Kvalita snímku se ověří před OCR.</p>
+          <section className="hero panel">
+            <div className="hero-copy">
+              <span className="eyebrow accent">Operation control</span>
+              <h1>Vyfoť tabuli. Ověř OCR. Spusť směnu.</h1>
+              <p>Digitální nástroj pro team leada k rychlému přiřazení operativních OP a přesunů v skladu bez zbytečného manuálního přepínání.</p>
+            </div>
+            <div className="hero-actions">
+              <label className="upload">
+                Načíst fotografii
+                <input type="file" accept="image/*" capture="environment" disabled={busy} onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void loadPhoto(file);
+                }} />
+              </label>
+              <div className="mini-card">
+                <span>OCR status</span>
+                <strong>{boardStatus}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="summary-strip">
+            <article className="summary-tile">
+              <span>Detekce tabule</span>
+              <strong>{analysis ? (analysis.boardDetected ? 'Ano' : 'Ne') : '—'}</strong>
+            </article>
+            <article className="summary-tile">
+              <span>Transport</span>
+              <strong>{transportCount}</strong>
+            </article>
+            <article className="summary-tile">
+              <span>Případy ke kontrole</span>
+              <strong>{reviewQueueSize}</strong>
+            </article>
+            <article className="summary-tile">
+              <span>Riziko</span>
+              <strong>{riskLevel}</strong>
+            </article>
           </section>
 
           <div className="board-layout">
-            <section>
+            <section className="panel">
               <div className="section-heading">
                 <h2>Náhled tabule</h2>
                 {previewUrl && <label className="toggle"><input type="checkbox" checked={showOverlay} onChange={(event) => setShowOverlay(event.target.checked)} /> Diagnostický overlay</label>}
@@ -232,7 +275,7 @@ export default function App() {
               </div>}
             </section>
 
-            <section>
+            <section className="panel roster-panel">
               <h2>Seznam zaměstnanců</h2>
               <textarea aria-label="Seznam zaměstnanců" value={roster} onChange={(event) => setRoster(event.target.value)} disabled={busy || Boolean(analysis)} />
               <small>Jedno jméno na řádek. Zaměstnanec mimo seznam se automaticky nepotvrdí.</small>
@@ -242,7 +285,7 @@ export default function App() {
           {error && <p className="error" role="alert">{error}</p>}
 
           {analysis && <>
-            <section>
+            <section className="panel">
               <div className="section-heading"><h2>Výsledek OCR</h2><span>{rows.length} nálezů · {reviewRows.length} ke kontrole · {confirmedOperators.length} potvrzených</span></div>
               <div className="stats">
                 <span>Preprocessing <b>{analysis.timingsMs?.preprocess.toFixed(0) ?? '–'} ms</b></span>
@@ -265,7 +308,7 @@ export default function App() {
               </button>
               {confirmedOperators.length === 0 && <p className="warn">Směnu nelze založit bez alespoň jednoho bezpečně potvrzeného zaměstnance.</p>}
             </section>
-            <section className="debug-controls">
+            <section className="debug-controls panel">
               <label className="toggle"><input type="checkbox" checked={showDiagnostics} onChange={(event) => setShowDiagnostics(event.target.checked)} /> Diagnostické údaje</label>
               {diagnostics && <button type="button" className="secondary" onClick={() => downloadBlob(exportDiagnosticsJson(diagnostics), 'ocr-diagnostics.json')}>Export diagnostiky JSON</button>}
               {showDiagnostics && <DebugPanel data={diagnostics} />}
@@ -274,14 +317,23 @@ export default function App() {
         </>
       ) : (
         <>
-          <section className="hero">
-            <h1>Živá směna</h1>
-            <div className="cards">{operatorCounts.map(([area, count]) => <div className={`card ${area === 'TRANSPORT' ? 'primary' : ''}`} key={area}><span>{area}</span><b>{count} OP</b></div>)}</div>
+          <section className="hero panel live-panel">
+            <div className="hero-copy">
+              <span className="eyebrow accent">Shift running</span>
+              <h1>Živá směna</h1>
+            </div>
+            <div className="cards">
+              {operatorCounts.map(([area, count]) => <div className={`card ${area === 'TRANSPORT' ? 'primary' : ''}`} key={area}><span>{area}</span><b>{count} OP</b></div>)}
+              <div className="card">
+                <span>Plnění</span>
+                <b>{fleetLoad}%</b>
+              </div>
+            </div>
           </section>
 
           {reviewQueue}
 
-          <section>
+          <section className="panel">
             <div className="section-heading"><h2>Přesuny zaměstnanců</h2><div>
               <button type="button" className="secondary" onClick={() => exportShift(shift)}>Export</button>
               <button type="button" className="secondary" onClick={endShift}>Ukončit směnu</button>
@@ -301,7 +353,7 @@ export default function App() {
             </div>
           </section>
 
-          <section>
+          <section className="panel">
             <h2>Mimo startovní pozici <span className="pill">{movedOnly(shift).length}</span></h2>
             {movedOnly(shift).length === 0 ? <p className="muted">Nikdo zatím nebyl přesunut.</p> : movedOnly(shift).map((operator) => <div className="movement" key={operator.name}><b>{operator.name}</b><span>{operator.start} → {operator.current}</span></div>)}
             <h3>Historie</h3>
